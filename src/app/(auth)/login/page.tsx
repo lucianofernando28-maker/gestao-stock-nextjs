@@ -24,7 +24,7 @@ export default function LoginPage() {
               name="email" 
               type="email" 
               required 
-              defaultValue="admin@estoque.com"
+              defaultValue=""
               className="w-full rounded-lg border border-slate-200 p-2.5 outline-none focus:border-indigo-500 text-slate-900"
             />
           </div>
@@ -34,7 +34,7 @@ export default function LoginPage() {
               name="password" 
               type="password" 
               required 
-              defaultValue="admin123"
+              defaultValue=""
               className="w-full rounded-lg border border-slate-200 p-2.5 outline-none focus:border-indigo-500 text-slate-900"
             />
           </div>
