@@ -1,0 +1,23 @@
+[
+  {
+    "id": "da3339a7-da9f-4240-b605-3006a4a6fa6e",
+    "name": "Administrador",
+    "role": "admin",
+    "email": "admin@estoque.com",
+    "password": "$2b$10$Z7ocmw2SAbsjFH9Re6GeY.zE03720.QFcBca7CDP.Uy.l6c3Nucj6"
+  },
+  {
+    "id": "a1674ede-54f9-49b6-8ad0-2d74199067b4",
+    "name": "Luciano Fernando",
+    "role": "admin",
+    "email": "luciano@gmail.com",
+    "password": "$2b$10$9ncilI3Y57X3UpIj4vSZg.gJ3q1lDoEGhtR5LUY50w3uMWO.cz.d2"
+  },
+  {
+    "id": "156a7a4b-4e89-44ec-9282-d3f2893a9549",
+    "name": "Matilde Dias",
+    "role": "user",
+    "email": "dias@gmail.com",
+    "password": "$2b$10$h5jF6ebIN2FkjfLl2hUYCe8KzYQsnt7emwoYsq8JzII1bAxTOB14u"
+  }
+]
