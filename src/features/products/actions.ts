@@ -1,292 +1,219 @@
+// Server Actions do Next.js — toda a lógica delegada ao backend Elysia.
+
 "use server";
 
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import bcrypt from "bcryptjs";
-import { readProducts, saveProducts, readUsers, saveUsers } from "@/lib/db";
-import { Product, PreProduct, User } from "./schema";
+import { apiFetch } from "@/lib/api";
+import type { Product, PreProduct } from "./schema";
 
-// Definição de estados padrão para as Server Actions
 export type ActionState = { erro?: string; sucesso?: string } | null;
 
-
-// AUTENTICAÇÃO 
-
-//Função de login
-export async function loginAction(
-  prevState: ActionState, 
-  formData: FormData
-): Promise<ActionState> {
+// AUTENTICAÇÃO
+// Função auxiliar para decodificar o token JWT e extrair os dados do usuário (como o nome completo)
+function decodeJwt(token: string) {
   try {
-    const email = formData.get("email") as string;
-    const password = formData.get("password") as string;
-
-    if (!email || !password) {
-      return { erro: "Por favor, preencha todos os campos." };
-    }
-
-    const users = await readUsers();
-    const userFind = users.find((user) => user.email === email);
-
-    let validPassword = false;
-    if (userFind) {
-      validPassword = await bcrypt.compare(password, userFind.password);
-    }
-
-    if (!userFind || !validPassword) {
-      return { erro: "Credenciais inválidas!" };
-    }
-
-    const cookieStore = await cookies();
-    if (!cookieStore) {
-      return { erro: "Erro interno no servidor ao processar cookies de sessão." };
-    }
-
-    cookieStore.set("session_token", `user_autenticado_${btoa(email)}`, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 10, // 10 minutos
-      path: "/",
-    });
-
-    
-    const namePart = userFind.name.trim().split(/\s+/);
-    let username = userFind.name.trim(); 
-
-    // Regra: Abrevia se tiver mais de 2 nomes OU se o nome completo for muito longo (ex: maior que 15 caracteres)
-    if (namePart.length > 2 || username.length > 20) {
-      const firstName = namePart[0];
-      const lastName = namePart[namePart.length - 1];
-      
-      // Se tiver mais nomes, extrai as duas iniciais
-      if (namePart.length > 1) {
-        username = (firstName[0] + lastName[0]).toUpperCase();
-      } else {
-        // Se for apenas 1 nome mas for muito longo, mostra apenas as 3 primeiras letras
-        username = firstName.slice(0, 3).toUpperCase();
-      }
-    }
-
-    // Salva o cookie com o texto tratado para o NavBar
-    cookieStore.set("user_initials", username, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 10,
-      path: "/",
-    });
-        
-  } catch (error) {
-    return { erro: "Ocorreu um erro interno ao tentar iniciar sessão." };
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(Buffer.from(base64, 'base64').toString());
+  } catch {
+    return null;
   }
-
-  
-  redirect("/");
 }
 
-//Função de logout
-export async function logoutAction() {
-  const cookieStore = await cookies();
-  cookieStore.delete("session_token");
-  redirect("/login");
-}
-
-//Obter usuarios logados atraves de emails
-async function getLoggedUser(): Promise<string> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session_token")?.value;
-
-  if (!token || !token.startsWith("user_autenticado_")) {
-    throw new Error("Utilizador não autenticado.");
-  }
-
-  // Extrai a parte em Base64 do token e decodifica para obter o e-mail novamente
-  const base64Email = token.replace("user_autenticado_", "");
-  return atob(base64Email); 
-}
-
-//Obter usuario por role
-async function getLoggedUserRole(): Promise<string> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("session_token")?.value;
-
-  if (!token || !token.startsWith("user_autenticado_")) {
-    throw new Error("Utilizador não autenticado.");
-  }
-
-  const base64Email = token.replace("user_autenticado_", "");
-  const loggedEmail = atob(base64Email);
-
-  const users = await readUsers();
-  const userFind = users.find((user) => user.email === loggedEmail);
-
-
-  if (!userFind) {
-    throw new Error("Utilizador não encontrado no sistema.");
-  }
-
-  return userFind.role; 
-}
-
-//Função de cadastro de usuario
-export async function registerAction(
+export async function loginAction(
   prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  try {
-    const name = formData.get("name") as string;
-    //const role = formData.get("role") as string
-    const email = formData.get("email") as string;
-    const password = formData.get("password") as string;
 
-    if (!name || !email || !password) {
-      return { erro: "Todos os campos (nome, e-mail e senha) são obrigatórios!" };
-    }
+  const email    = formData.get("email")    as string;
+  const password = formData.get("password") as string;
 
-    const users = await readUsers();
-
-    const userExist = users.find((user) => user.email === email);
-    if (userExist) {
-      return { erro: "Este e-mail já está cadastrado!" };
-    }
-
-    const salt = await bcrypt.genSalt(10);
-    const passwordCriptografada = await bcrypt.hash(password, salt);
-    
-    const newUser: User = {
-      id: crypto.randomUUID(),
-      name: name,
-      role: "user",
-      email: email,
-      password: passwordCriptografada
-    };
-
-    users.push(newUser);
-    await saveUsers(users);
-
-  } catch (error) {
-    return { erro: "Erro ao processar o seu registo na base de dados." };
+  if (!email || !password) {
+    return { erro: "Por favor, preencha todos os campos." };
   }
+
+  const { data, status } = await apiFetch<{ message?: string; accessToken?: string }>("/auth/sign-in", {
+    method:   "POST",
+    body:     { email, password },
+    withAuth: false,
+  });
+
+  if (status === 401) return { erro: "Email ou senha inválidos." };
+  if (!status.toString().startsWith("2")) {
+    return { erro: (data as any)?.message ?? "Erro ao iniciar sessão." };
+  }
+
+  const cookieStore = await cookies();
+  const token = (data as any).accessToken; // Armazena o token
+  const tokenPayload = decodeJwt(token);   // Decodifica o payload do token
+
+  // Guardar o access_token como cookie do Next.js (porta 3000)
+  // para o apiFetch o poder repassar ao Elysia em pedidos futuros
+  cookieStore.set("access_token", token, {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge:   5 * 60,
+    path:     "/",
+  });
+
+  cookieStore.set("session", "authenticated", {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge:   5 * 60,
+    path:     "/",
+  });
+
+  // Guardamos o Nome Completo vindo do token (ou fallback com o início do e-mail caso não exista no token)
+  cookieStore.set("user_name", tokenPayload?.name || email.split("@")[0], {
+    httpOnly: false, // Permitir que o frontend leia o nome completo se precisar
+    secure:   process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge:   5 * 60,
+    path:     "/",
+  });
+
+  // Guardamos também o ID do usuário que será necessário para filtrar os produtos na listagem
+  cookieStore.set("user_id", tokenPayload?.id || tokenPayload?.sub || "", {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge:   5 * 60,
+    path:     "/",
+  });
+
+  redirect("/");
+}
+
+
+export async function logoutAction(): Promise<void> {
+  await apiFetch("/auth/logout", { method: "POST" });
+
+  const cookieStore = await cookies();
+  cookieStore.delete("session");
+  cookieStore.delete("user_initials");
 
   redirect("/login");
 }
 
-// OPERACAO COM PRODUTO
-//Função de procurar produtos
+export async function registerAction(
+	prevState: ActionState,
+	formData: FormData
+): Promise<ActionState> {
+	const name = formData.get("name") as string;
+	const email = formData.get("email") as string;
+	const password = formData.get("password") as string;
+
+	if (!name || !email || !password) {
+		return { erro: "Todos campos são obrigatórios." };
+	}
+
+	const { data, status } = await apiFetch<{ message?: string }>(
+		"/auth/sign-up",
+		{
+			method: "POST",
+			body: { name, email, password },
+			withAuth: false, // registo também não tem token ainda
+		}
+	);
+
+	// 409 Conflict → email já existe na base de dados
+	if (status === 409) return { erro: "Este e-mail já está cadastrado." };
+
+	if (!status.toString().startsWith("2")) {
+		return { erro: (data as any)?.message ?? "Erro ao registar." };
+	}
+
+	redirect("/login");
+}
+
+// PRODUTOS
+
 export async function searchProducts(): Promise<Product[]> {
-  try {
-    const loggedRole = await getLoggedUserRole();
-    const loggedEmail = await getLoggedUser()
-    const allProducts = await readProducts();
+	// withAuth: true (padrão) — o apiFetch repassa o access_token
+	const { data, ok } = await apiFetch<any[]>("/products");
 
-    if (loggedRole === "admin") {
-      return allProducts;
-    }
+	if (!ok) return [];
 
-    return allProducts.filter((p) => p.userId === loggedEmail);
-  } catch (error) {
-   
-    return []; 
+
+	// A função normalizeProduct faz a conversão e calcula os campos em falta.
+	return (data ?? []).map(normalizeProduct);
+}
+export async function createProduct(productData: PreProduct): Promise<ActionState> {
+  const { data, status, ok } = await apiFetch<unknown>("/products", {
+    method: "POST",
+    body: {
+      name:          productData.name,
+      price:         Number(productData.price),
+      stockQuantity: Number(productData.stockQuantity),
+    },
+  });
+
+  // LOG TEMPORÁRIO — apagar depois
+  console.log("STATUS:", status);
+  console.log("OK:", ok);
+  console.log("DATA:", JSON.stringify(data));
+
+  if (!status.toString().startsWith("2")) {
+    return { erro: "Falha ao criar produto." };
   }
+
+  revalidatePath("/products");
+  revalidatePath("/");
+  return { sucesso: "Produto criado com sucesso!" };
 }
 
-//Função criar produto
-export async function createProduct(data: PreProduct): Promise<ActionState> {
-  try {
-    const loggedEmail = await getLoggedUser();
-    const products = await readProducts();
-    
-    const duplicateProduct = products.some(
-      (p) => p.name.trim().toLowerCase() === data.name.trim().toLowerCase() && p.userId === loggedEmail
-    );
+export async function updateProducts(id: string, productData: PreProduct): Promise<ActionState> {
+  const { status } = await apiFetch<unknown>(`/products/${id}`, {
+    method: "PUT",
+    body: {
+      name: productData.name,
+      price: Number(productData.price),
+      stockQuantity: Number(productData.stockQuantity),
+    },
+  });
 
-    if (duplicateProduct) {
-      return { erro: `O produto "${data.name}" já está registado no seu stock.` };
-    }
-
-    const newProduct: Product = {
-      id: crypto.randomUUID(),
-      name: data.name,
-      price: Number(data.price),
-      stockQuantity: Number(data.stockQuantity),
-      totalPrice: Number(data.stockQuantity) * Number(data.price),
-      updateAt: new Date().toLocaleDateString("pt-PT"),
-      userId: loggedEmail, 
-    };
-
-    products.push(newProduct);
-    await saveProducts(products);
-    
-    revalidatePath("/products");
-    revalidatePath("/");
-    return { sucesso: "Produto criado com sucesso!" };
-  } catch (error) {
-    return { erro: "Falha ao criar o produto." };
+  if (status === 404) return { erro: "Produto não encontrado." };
+  if (!status.toString().startsWith("2")) {
+    return { erro: "Falha ao atualizar produto." };
   }
+
+  revalidatePath("/products");
+  revalidatePath("/");
+  return { sucesso: "Produto atualizado com sucesso!" };
 }
 
-//Atualizar produtos
-export async function updateProducts(id: string, data: PreProduct): Promise<ActionState> {
-  try {
-    const loggedEmail = await getLoggedUser();
-    const products = await readProducts();
-    
-   
-    const index = products.findIndex((p) => p.id === id);
-
-    if (index === -1) {
-      return { erro: "Produto não encontrado." };
-    }
-
-    //Verifica se o produto pertence mesmo a quem está a tentar editar
-    if (products[index].userId !== loggedEmail) {
-      return { erro: "Não tem permissão para alterar este produto!" };
-    }
-
-    products[index] = {
-      ...products[index],
-      name: data.name,
-      price: Number(data.price),
-      stockQuantity: Number(data.stockQuantity),
-      totalPrice: Number(data.stockQuantity) * Number(data.price),
-      updateAt: new Date().toLocaleDateString("pt-PT"),
-    };
-
-    await saveProducts(products);
-    
-    revalidatePath("/products");
-    revalidatePath("/");
-    return { sucesso: "Produto atualizado com sucesso!" };
-  } catch (error) {
-    return { erro: "Falha ao atualizar o produto." };
-  }
-}
-
-//Remover produtos
 export async function removeProduct(id: string): Promise<ActionState> {
-  try {
-    const loggedEmail = await getLoggedUser();
-    const products = await readProducts();
-    
-    const produtoAlvo = products.find((p) => p.id === id);
+  const { status } = await apiFetch<unknown>(`/products/${id}`, {
+    method: "DELETE",
+  });
 
-    if (!produtoAlvo) {
-      return { erro: "Produto não encontrado para remoção." };
-    }
-
-    
-    if (produtoAlvo.userId !== loggedEmail) {
-      return { erro: "Não tem permissão para remover este produto!" };
-    }
-
-    const productsFiltered = products.filter((p) => !(p.id === id && p.userId === loggedEmail || p.userId==="admin@estoque.com"));
-    
-    await saveProducts(productsFiltered);
-    
-    revalidatePath("/products");
-    revalidatePath("/");
-    return { sucesso: "Produto removido com sucesso!" };
-  } catch (error) {
-    return { erro: "Falha ao remover o produto." };
+  if (status === 404) return { erro: "Produto não encontrado." };
+  if (!status.toString().startsWith("2")) {
+    return { erro: "Falha ao remover produto." };
   }
+
+  revalidatePath("/products");
+  revalidatePath("/");
+  return { sucesso: "Produto removido com sucesso!" };
+}
+
+//Adaptar a resposta do backend ao schema do frontend
+
+function normalizeProduct(p: any): Product {
+	return {
+		id: String(p.id),
+		name: p.name,
+		price: Number(p.price),
+		stockQuantity: Number(p.stockQuantity),
+		totalPrice: Number(p.price) * Number(p.stockQuantity),
+		updateAt: p.updateAt
+			? new Date(p.updateAt).toLocaleDateString("pt-PT")
+			: new Date().toLocaleDateString("pt-PT"),
+		userId: String(p.userId ?? ""),
+		createdByName: p.createdByName ?? "—",
+	};
 }

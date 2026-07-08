@@ -6,10 +6,11 @@ export interface Product {
   totalPrice: number;
   updateAt: string;
   userId: string;
+  createdByName: string;
 }
 
 
-export type PreProduct = Omit<Product, "id" | "totalPrice" | "updateAt"| "userId">;
+export type PreProduct = Omit<Product, "id" | "totalPrice" | "updateAt"| "userId" | "createdByName">;
 
 
 export interface User {

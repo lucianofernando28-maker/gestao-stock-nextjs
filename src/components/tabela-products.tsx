@@ -93,7 +93,7 @@ export function TableProducts({ dados }: TabelaProps) {
                 <td className="px-6 py-4 text-right font-medium text-slate-900">
                   {product.totalPrice.toFixed(2)}
                 </td>
-                <td className="px-6 py-4 text-center text-xs text-slate-600">{product.userId}</td>
+                <td className="px-6 py-4 text-center text-xs text-slate-600">{product.createdByName}</td>
                 <td className="px-6 py-4 text-center flex items-center justify-center gap-2">
                   <ModalProduct mode="edit" productTarget={product} />
                   <button
