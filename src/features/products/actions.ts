@@ -66,7 +66,8 @@ export async function loginAction(
     maxAge:   5 * 60,
     path:     "/",
   });
-
+console.log("TOKEN PAYLOAD:", tokenPayload);
+console.log("TOKEN PAYLOAD:", tokenPayload?.name);
   // Guardamos o Nome Completo vindo do token (ou fallback com o início do e-mail caso não exista no token)
   cookieStore.set("user_name", tokenPayload?.name || email.split("@")[0], {
     httpOnly: false, // Permitir que o frontend leia o nome completo se precisar
@@ -146,8 +147,8 @@ export async function createProduct(productData: PreProduct): Promise<ActionStat
   const { data, status, ok } = await apiFetch<unknown>("/products", {
     method: "POST",
     body: {
-      name:          productData.name,
-      price:         Number(productData.price),
+      name: productData.name,
+      price: Number(productData.price),
       stockQuantity: Number(productData.stockQuantity),
     },
   });

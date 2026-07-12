@@ -6,8 +6,6 @@ const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:3001";
 type FetchOptions = {
 	method?: "GET" | "POST" | "PUT" | "DELETE";
 	body?: unknown;
-	// true  → repassa cookies do browser (rotas protegidas — padrão)
-	// false → não envia cookies (login / registo — ainda sem token)
 	withAuth?: boolean;
 };
 
